@@ -32,6 +32,8 @@ function isTopic(value: unknown): value is TopicId {
   return typeof value === "string" && Object.keys(TOPICS).includes(value);
 }
 
+export const maxDuration = 30;
+
 export async function POST(req: Request) {
   const { messages, topic }: { messages: UIMessage[]; topic?: unknown } =
     await req.json();
