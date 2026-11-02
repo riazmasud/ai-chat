@@ -7,6 +7,8 @@ import {
   toUIMessageStream,
 } from "ai";
 
+export const maxDuration = 30;
+
 const BASE_INSTRUCTIONS = `You are a front-end interview coach.
 
 How you work:
@@ -32,20 +34,45 @@ function isTopic(value: unknown): value is TopicId {
   return typeof value === "string" && Object.keys(TOPICS).includes(value);
 }
 
-export const maxDuration = 30;
+// Limits that keep a public endpoint from being used to run up costs
+const MAX_MESSAGES = 30;
+const MAX_TOTAL_CHARS = 12_000;
+
+function isValidConversation(messages: unknown): boolean {
+  if (
+    !Array.isArray(messages) ||
+    messages.length === 0 ||
+    messages.length > MAX_MESSAGES
+  ) {
+    return false;
+  }
+  let totalChars = 0;
+  for (const m of messages) {
+    if (!m || (m.role !== "user" && m.role !== "assistant")) return false;
+    if (!Array.isArray(m.parts)) return false;
+    for (const part of m.parts) {
+      if (part?.type === "text" && typeof part.text === "string") {
+        totalChars += part.text.length;
+      }
+    }
+  }
+  return totalChars <= MAX_TOTAL_CHARS;
+}
 
 export async function POST(req: Request) {
-  const { messages, topic }: { messages: UIMessage[]; topic?: unknown } =
-    await req.json();
+  const body = await req.json().catch(() => null);
 
-  if (!isTopic(topic)) {
-    return new Response("Invalid topic", { status: 400 });
+  if (!body || !isTopic(body.topic) || !isValidConversation(body.messages)) {
+    return new Response("Invalid request", { status: 400 });
   }
+
+  const { messages, topic } = body as { messages: UIMessage[]; topic: TopicId };
 
   const result = streamText({
     model: anthropic("claude-haiku-5-5"),
     instructions: `${BASE_INSTRUCTIONS}\n\n${TOPICS[topic]}`,
     messages: await convertToModelMessages(messages),
+    maxOutputTokens: 2000,
     abortSignal: req.signal,
   });
 
